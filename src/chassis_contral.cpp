@@ -2,7 +2,7 @@
 #include"vex.h"
 #include"vex_global.h"
 #include"PID.h"
-#include"locate.h"
+#include"locate_5225A.h"
 #include "moto_control.h"
 using namespace vex;
 // 角度归一化到 -180 ~ +180

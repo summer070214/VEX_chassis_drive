@@ -2,7 +2,7 @@
 #include "robot_config.h"
 #include "PID.h"
 #include"sensor_read.h"
-#include"locate.h"
+#include"locate_5225A.h"
 
 void MotorEncoder_Init()  //将电动机的编码器各个参数重置为零
 {

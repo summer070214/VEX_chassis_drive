@@ -18,10 +18,8 @@
 			"name": "Win32",
 			"includePath": [
 				"${vex_sdkIncludes}",
-				
 				"${workspaceFolder}/APP/kalman",
 				"${workspaceFolder}/APP/PID"
-				
 			],
 			"compilerPath": "${vex_compilerPath}",
 			"cStandard": "gnu99",

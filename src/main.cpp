@@ -11,11 +11,10 @@
 #include "robot_config.h"
 #include "chassis_contral.h"
 #include "global_data.h"
-#include "locate.h"
+#include "locate_5225A.h"
 #include "moto_control.h"
 #include "sensor_read.h"
 #include "controller.h"
-#include <locate.h>
 using namespace vex;
 
 // A global instance of competition

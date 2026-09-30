@@ -1,7 +1,7 @@
 #include "sensor_read.h"
 #include "robot_config.h"
 #include "D:\DESKTOP\vex\Chassis_drive\APP\kalman\kalman.h"
-#include "locate.h"
+#include "locate_5225A.h"
 #include "global_data.h"
 #include "stdio.h"
 #include "moto_control.h"
