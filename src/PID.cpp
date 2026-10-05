@@ -3,6 +3,8 @@
 //
 #include "PID.h"
 #include <stdint.h>
+PID_Data_t Rspeed_pid_data;
+PID_Data_t Lspeed_pid_data;
 PID_Data_t angle_pid_data;
 PID_Data_t distance_pid_data;
 void pidinit( PID_Data_t *pid,float kp,float ki,float kd,float i_limit,float output_limit) {

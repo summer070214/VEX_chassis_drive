@@ -5,20 +5,33 @@
 #include"robot_config.h"
 using namespace vex;
 
-Controller_Data controller_data;
-void controller_data_read(void){
+ControllerData controller_data;   // 全局变量
+
+void controller_data_read(void) {
+    // ---------- 摇杆 ----------
     controller_data.Ch1 = Controller1.Axis1.value();
+    controller_data.Ch2 = Controller1.Axis2.value();
     controller_data.Ch3 = Controller1.Axis3.value();
     controller_data.Ch4 = Controller1.Axis4.value();
+
+    // ---------- 右侧 ABXY ----------
+    controller_data.BtnA = Controller1.ButtonA.pressing();
+    controller_data.BtnB = Controller1.ButtonB.pressing();
     controller_data.BtnX = Controller1.ButtonX.pressing();
     controller_data.BtnY = Controller1.ButtonY.pressing();
-    controller_data.BtnUp = Controller1.ButtonUp.pressing();
-    controller_data.BtnDown = Controller1.ButtonDown.pressing();
-    controller_data.BtnL = Controller1.ButtonLeft.pressing();
-    controller_data.BtnR = Controller1.ButtonRight.pressing();
-    controller_data.LL1 = Controller1.ButtonX.pressing();
-    controller_data.LL2 = Controller1.ButtonY.pressing();
-    }
+
+    // ---------- 方向键 ----------
+    controller_data.BtnUp    = Controller1.ButtonUp.pressing();
+    controller_data.BtnDown  = Controller1.ButtonDown.pressing();
+    controller_data.BtnLeft  = Controller1.ButtonLeft.pressing();
+    controller_data.BtnRight = Controller1.ButtonRight.pressing();
+
+    // ---------- 肩部按键 ----------
+    controller_data.L1 = Controller1.ButtonL1.pressing();
+    controller_data.L2 = Controller1.ButtonL2.pressing();
+    controller_data.R1 = Controller1.ButtonR1.pressing();
+    controller_data.R2 = Controller1.ButtonR2.pressing();
+}
 
 void handleDriveControl() {
     const int DEADZONE = 10;  // 摇杆死区，10%以内认为没动
@@ -60,8 +73,8 @@ void handleDriveControl() {
     static bool lastLeft  = false;
     static bool lastRight = false;
 
-    bool currLeft  = controller_data.BtnL;
-    bool currRight = controller_data.BtnR;
+    bool currLeft  = controller_data.L1;
+    bool currRight = controller_data.R1;
 
     if (currLeft && !lastLeft) {
         car_left_angle();

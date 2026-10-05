@@ -15,6 +15,8 @@
 #include "moto_control.h"
 #include "sensor_read.h"
 #include "controller.h"
+#include "PID.h"
+#include "debug_send.h"
 using namespace vex;
 
 // A global instance of competition
@@ -36,6 +38,16 @@ void pre_auton(void) {
 
   // All activities that occur before the competition starts
   // Example: clearing encoders, setting servo positions, ...
+  Inertial.calibrate();       // 惯性传感器校准
+    while (Inertial.isCalibrating()) {
+        wait(50, msec);
+    }
+  MotorEncoder_Init();  // 初始化电机编码器
+  Position_Init   ();      // 初始化定位系统
+  pidinit(&Rspeed_pid_data, 0.0f, 0.0f, 0.0f, 10.0f, 100.0f); // 初始化速度 PID
+  pidinit(&Lspeed_pid_data, 0.0f, 0.0f, 0.0f, 10.0f, 100.0f); // 初始化速度 PID
+  pidinit(&angle_pid_data, 0.0f, 0.0f, 0.0f, 10.0f, 100.0f); // 初始化角度 PID
+  pidinit(&distance_pid_data, 0.0f, 0.0f, 0.0f, 10.0f, 100.0f); // 初始化 X 轴 PID
 }
 
 /*---------------------------------------------------------------------------*/
@@ -65,6 +77,7 @@ void autonomous(void) {
 /*---------------------------------------------------------------------------*/
 
 void usercontrol(void) {
+ 
   // User control code here, inside the loop
   while (1) {
     // This is the main execution loop for the user control program.
@@ -75,7 +88,10 @@ void usercontrol(void) {
     // Insert user code here. This is where you use the joystick values to
     // update your motors, etc.
     // ........................................................................
-
+    handleDriveControl(); 
+   
+    data_process();
+    UpdateGlobalPosition();
     wait(20, msec); // Sleep the task for a short amount of time to
                     // prevent wasted resources.
   }
@@ -88,13 +104,12 @@ int main() {
   // Set up callbacks for autonomous and driver control periods.
   Competition.autonomous(autonomous);
   Competition.drivercontrol(usercontrol);
-
-  // Run the pre-autonomous function.
   pre_auton();
+  // Run the pre-autonomous function.
+  debug_send_init();      // 启动调试发送任务
 
   // Prevent main from exiting with an infinite loop.
   while (true) {
     wait(100, msec);
-    handleDriveControl();
   }
 }

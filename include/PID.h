@@ -26,6 +26,8 @@ typedef struct{
 void pidinit( PID_Data_t *pid,float kp,float ki,float kd,float i_limit,float output_limit);
 void pid_changegoal( PID_Data_t *pid,float goal);
 float pid_compute( PID_Data_t *pid,float goal,float current);
+extern PID_Data_t Rspeed_pid_data;
+extern PID_Data_t Lspeed_pid_data;
 extern PID_Data_t angle_pid_data;
 extern PID_Data_t distance_pid_data;
 #endif
