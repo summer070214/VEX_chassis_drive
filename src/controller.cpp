@@ -37,18 +37,13 @@ void handleDriveControl() {
     const int DEADZONE = 10;  // 摇杆死区，10%以内认为没动
     controller_data_read();
     // 左摇杆上下：Axis3
-    int forward = controller_data.Ch3;
-
-    // 右摇杆左右：Axis1
-    int turn = controller_data.Ch1;
-
+    // int forward = controller_data.Ch3;
+    int forward =Controller1.Axis3.value();
     // 死区处理
     if (forward > -DEADZONE && forward < DEADZONE) {
         forward = 0;
     }
-    if (turn > -DEADZONE && turn < DEADZONE) {
-        turn = 0;
-    }
+    
 
     // 左摇杆控制前进后退
     if (forward > 0) {
@@ -56,8 +51,13 @@ void handleDriveControl() {
     } else if (forward < 0) {
         car_backword(-forward);    // 下推后退，取正值
     }
-
+    // 右摇杆左右：Axis1
+    // int turn = controller_data.Ch1;
+    int turn = Controller1.Axis1.value();
     // 右摇杆控制左转右转
+    if (turn > -DEADZONE && turn < DEADZONE) {
+        turn = 0;
+    }
     if (turn < 0) {
         car_left(-turn);           // 左推左转，取正值
     } else if (turn > 0) {
@@ -77,10 +77,10 @@ void handleDriveControl() {
     bool currRight = controller_data.R1;
 
     if (currLeft && !lastLeft) {
-        car_left_angle();
+        car_left_angle(90);
     }
     if (currRight && !lastRight) {
-        car_right_angle();
+        car_right_angle(90);
     }
 
     lastLeft  = currLeft;

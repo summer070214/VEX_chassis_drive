@@ -8,7 +8,7 @@ void car_left(float target_speed);
 void car_right(float target_speed);
 void car_stop(void);
 
-void car_left_angle(void);
-void car_right_angle(void);
+void car_left_angle(float angle);
+void car_right_angle(float angle);
 
 #endif

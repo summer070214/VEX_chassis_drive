@@ -44,10 +44,10 @@ void pre_auton(void) {
     }
   MotorEncoder_Init();  // 初始化电机编码器
   Position_Init   ();      // 初始化定位系统
-  pidinit(&Rspeed_pid_data, 0.0f, 0.0f, 0.0f, 10.0f, 100.0f); // 初始化速度 PID
-  pidinit(&Lspeed_pid_data, 0.0f, 0.0f, 0.0f, 10.0f, 100.0f); // 初始化速度 PID
-  pidinit(&angle_pid_data, 0.0f, 0.0f, 0.0f, 10.0f, 100.0f); // 初始化角度 PID
-  pidinit(&distance_pid_data, 0.0f, 0.0f, 0.0f, 10.0f, 100.0f); // 初始化 X 轴 PID
+  pidinit(&Rspeed_pid_data, 0.05f, 0.0f, 0.0f, 10.0f, 12.0f); // 初始化速度 PID
+  pidinit(&Lspeed_pid_data, 0.05f, 0.0f, 0.0f, 10.0f, 12.0f); // 初始化速度 PID
+  pidinit(&angle_pid_data, 3, 1, 0.1f, 10.0f, 80.0f); // 初始化角度 PID
+  pidinit(&distance_pid_data, 0.0f, 0.0f, 0.0f, 10.0f, 100.0f); // 初始化 定位 PID
 }
 
 /*---------------------------------------------------------------------------*/
@@ -78,7 +78,9 @@ void autonomous(void) {
 
 void usercontrol(void) {
  
-  // User control code here, inside the loop
+  // User control code here, inside the loop 
+  data_process();
+
   while (1) {
     // This is the main execution loop for the user control program.
     // Each time through the loop your program should update motor + servo
@@ -88,11 +90,12 @@ void usercontrol(void) {
     // Insert user code here. This is where you use the joystick values to
     // update your motors, etc.
     // ........................................................................
+    //  controller_data_read();      // ← 填充 controller_data
+    //     data_process();              // ← 填充 robot_data[0..7] & [10,11] & [8,9]
+    //     UpdateGlobalPosition();      // ← 唯一更新 position_data 的地方
     handleDriveControl(); 
-   
-    data_process();
-    UpdateGlobalPosition();
-    wait(20, msec); // Sleep the task for a short amount of time to
+    // UpdateGlobalPosition();
+     wait(20, msec); // Sleep the task for a short amount of time to
                     // prevent wasted resources.
   }
 }
@@ -110,6 +113,6 @@ int main() {
 
   // Prevent main from exiting with an infinite loop.
   while (true) {
-    wait(100, msec);
+      UpdateGlobalPosition();
   }
 }

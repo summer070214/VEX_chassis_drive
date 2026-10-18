@@ -1,9 +1,23 @@
+#!/usr/bin/env python3
 """
-VEX V5 演示上位机 v5.0 （低延迟版）
-- PID 翻页：angle / distance / Lspeed / Rspeed
-- 曲线：goal(目标) vs actual(实际)
-- 数值：kp / ki / kd / actual / goal / output / i_limit
-- 左：地图 + 坐标    右：遥控器 16 项
+VEX V5 调试上位机 debug.py
+=========================
+功能
+----
+1. 4 个 PID 调参页（angle / distance / Lspeed / Rspeed），每页画 goal vs actual
+2. 左侧地图：车当前位置 + 朝向
+3. 中间 robot_data[] 12 项（电机转速 + 定位轮 + 航向）
+4. 右侧遥控器 16 项
+5. 键盘 ←/→ 或工具栏按钮翻页
+
+串口协议（与 debug.cpp 匹配）
+------------------------------
+POS:gx,gy,yaw
+RD:v0,...,v11
+PID:name,kp,ki,kd,goal,actual,error,last_error,
+      kp_out,ki_out,kd_out,out,i_limit,out_limit
+RC:ch1,ch2,ch3,ch4,btnA,btnB,btnX,btnY,btnUp,btnDown,
+   btnLeft,btnRight,L1,L2,R1,R2
 """
 
 import sys
@@ -18,19 +32,19 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 import pyqtgraph as pg
 
-# ⚠ 关键：让 PyQtGraph 用 OpenGL（GPU 加速）
+# OpenGL 加速
 try:
     pg.setConfigOptions(useOpenGL=True, antialias=False)
 except Exception:
     pass
 
 # ---------------- 配置 ----------------
-MAX_POINTS = 600            # 缓存上限（低延迟关键）
-DRAW_POINTS = 300           # 每帧最多画这么多点
-FIELD_SIZE = 6
-CELL_SIZE = 80
-CELL_CM = 60
-UI_REFRESH_MS = 40          # UI 刷新周期
+MAX_POINTS    = 600
+DRAW_POINTS   = 300
+FIELD_SIZE    = 6
+CELL_SIZE     = 80
+CELL_CM       = 60
+UI_REFRESH_MS = 40
 
 PID_NAMES = ["angle", "distance", "Lspeed", "Rspeed"]
 
@@ -51,18 +65,18 @@ PID_FIELDS = [
 ]
 
 PLOT_FIELDS = [
-    ("goal",   "#00e5ff"),   # 亮青，目标
-    ("actual", "#4d8cff"),   # 亮蓝，实际
+    ("goal",   "#00e5ff"),
+    ("actual", "#4d8cff"),
 ]
 
 DISPLAY_FIELDS = [
-    ("kp",       "#ff6b6b"),
-    ("ki",       "#ff9f43"),
-    ("kd",       "#feca57"),
-    ("actual",   "#4d8cff"),
-    ("goal",     "#00e5ff"),
-    ("output",   "#ffffff"),
-    ("i_limit",  "#aaaaaa"),
+    ("kp",      "#ff6b6b"),
+    ("ki",      "#ff9f43"),
+    ("kd",      "#feca57"),
+    ("actual",  "#4d8cff"),
+    ("goal",    "#00e5ff"),
+    ("output",  "#ffffff"),
+    ("i_limit", "#aaaaaa"),
 ]
 
 ROBOT_FIELDS = [
@@ -81,7 +95,7 @@ ROBOT_FIELDS = [
 ]
 
 
-# ==================== 串口线程 ====================
+# ============ 串口线程 ============
 class SerialWorker(QThread):
     pid_received = pyqtSignal(str, dict)
     pos_received = pyqtSignal(float, float, float)
@@ -96,7 +110,6 @@ class SerialWorker(QThread):
 
     def connect_port(self, port, baud):
         try:
-            # timeout=0 → 完全非阻塞
             self.ser = serial.Serial(port, baud, timeout=0)
             self.running = True
             self.status_changed.emit(f"已连接 {port}")
@@ -116,11 +129,9 @@ class SerialWorker(QThread):
 
     def run(self):
         try:
-            # 提高线程优先级（Windows）
             import ctypes
             ctypes.windll.kernel32.SetThreadPriority(
-                ctypes.windll.kernel32.GetCurrentThread(), 2
-            )
+                ctypes.windll.kernel32.GetCurrentThread(), 2)
         except Exception:
             pass
 
@@ -133,17 +144,14 @@ class SerialWorker(QThread):
                 n = self.ser.in_waiting
                 if n:
                     buf += self.ser.read(n)
-                    # 按 \n 切分，防止粘包
                     while b'\n' in buf:
                         line, buf = buf.split(b'\n', 1)
                         line = line.decode('utf-8', errors='ignore').strip()
                         if line:
                             self.parse_line(line)
-                    # 防止 buf 无限增长
                     if len(buf) > 4096:
                         buf = buf[-1024:]
                 else:
-                    # 无数据时短睡，降低 CPU 占用
                     self.msleep(1)
             except Exception:
                 self.msleep(5)
@@ -159,17 +167,13 @@ class SerialWorker(QThread):
                     self.pid_received.emit(name, data)
                 except ValueError:
                     pass
-
         elif line.startswith("POS:"):
             parts = line[4:].split(',')
             if len(parts) == 3:
                 try:
-                    self.pos_received.emit(
-                        float(parts[0]), float(parts[1]), float(parts[2])
-                    )
+                    self.pos_received.emit(*[float(x) for x in parts])
                 except ValueError:
                     pass
-
         elif line.startswith("RD:"):
             parts = line[3:].split(',')
             if len(parts) == 12:
@@ -177,41 +181,25 @@ class SerialWorker(QThread):
                     self.rd_received.emit([float(x) for x in parts])
                 except ValueError:
                     pass
-
         elif line.startswith("RC:"):
             parts = line[3:].split(',')
             if len(parts) == 16:
                 try:
+                    v = [int(float(x)) for x in parts]
                     self.rc_received.emit({
-                        'Ch1':      int(float(parts[0])),
-                        'Ch2':      int(float(parts[1])),
-                        'Ch3':      int(float(parts[2])),
-                        'Ch4':      int(float(parts[3])),
-                        'BtnA':     bool(int(float(parts[4]))),
-                        'BtnB':     bool(int(float(parts[5]))),
-                        'BtnX':     bool(int(float(parts[6]))),
-                        'BtnY':     bool(int(float(parts[7]))),
-                        'BtnUp':    bool(int(float(parts[8]))),
-                        'BtnDown':  bool(int(float(parts[9]))),
-                        'BtnLeft':  bool(int(float(parts[10]))),
-                        'BtnRight': bool(int(float(parts[11]))),
-                        'L1':       bool(int(float(parts[12]))),
-                        'L2':       bool(int(float(parts[13]))),
-                        'R1':       bool(int(float(parts[14]))),
-                        'R2':       bool(int(float(parts[15]))),
+                        'Ch1': v[0], 'Ch2': v[1], 'Ch3': v[2], 'Ch4': v[3],
+                        'BtnA': bool(v[4]), 'BtnB': bool(v[5]),
+                        'BtnX': bool(v[6]), 'BtnY': bool(v[7]),
+                        'BtnUp': bool(v[8]), 'BtnDown': bool(v[9]),
+                        'BtnLeft': bool(v[10]), 'BtnRight': bool(v[11]),
+                        'L1': bool(v[12]), 'L2': bool(v[13]),
+                        'R1': bool(v[14]), 'R2': bool(v[15]),
                     })
                 except (ValueError, IndexError):
                     pass
 
-    def send(self, cmd):
-        try:
-            if self.ser and self.ser.is_open:
-                self.ser.write((cmd + '\n').encode())
-        except Exception:
-            pass
 
-
-# ==================== 地图（低频刷新） ====================
+# ============ 地图 ============
 class FieldMap(QWidget):
     def __init__(self):
         super().__init__()
@@ -222,7 +210,6 @@ class FieldMap(QWidget):
         self._need_repaint = False
         self.setMinimumSize(460, 460)
 
-        # 地图以 10Hz 刷新，不用跟着数据 50Hz 重绘
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._repaint_if_needed)
         self.timer.start(100)
@@ -251,6 +238,7 @@ class FieldMap(QWidget):
             ox = (self.width() - W) // 2
             oy = (self.height() - W) // 2
 
+            # 棋盘格
             for row in range(FIELD_SIZE):
                 for col in range(FIELD_SIZE):
                     x = ox + col * CELL_SIZE
@@ -263,22 +251,24 @@ class FieldMap(QWidget):
             p.setPen(QPen(QColor(140, 140, 170), 3))
             p.drawRect(ox - 2, oy - 2, W + 4, W + 4)
 
+            # 坐标轴标注
             p.setPen(QPen(QColor(200, 200, 200), 1))
             p.setFont(QFont("Arial", 9))
             p.drawText(ox + W + 8, oy + W + 16, "X (cm)")
             p.drawText(ox - 20, oy - 6, "Y (cm)")
             p.drawText(ox - 20, oy + W + 16, "(0,0)")
 
+            # 轨迹
             if len(self.trail) > 1:
                 p.setPen(QPen(QColor(0, 200, 255, 180), 2))
-                pts = []
-                for (tx, ty) in self.trail:
-                    px = ox + (tx / CELL_CM) * CELL_SIZE
-                    py = oy + ((FIELD_SIZE * CELL_CM - ty) / CELL_CM) * CELL_SIZE
-                    pts.append(QPointF(px, py))
+                pts = [QPointF(
+                            ox + (tx / CELL_CM) * CELL_SIZE,
+                            oy + ((FIELD_SIZE * CELL_CM - ty) / CELL_CM) * CELL_SIZE)
+                       for (tx, ty) in self.trail]
                 for i in range(len(pts) - 1):
                     p.drawLine(pts[i], pts[i + 1])
 
+            # 车体
             px = ox + (self.rx / CELL_CM) * CELL_SIZE
             py = oy + ((FIELD_SIZE * CELL_CM - self.ry) / CELL_CM) * CELL_SIZE
 
@@ -311,7 +301,7 @@ class FieldMap(QWidget):
             p.end()
 
 
-# ==================== 单个 PID 页 ====================
+# ============ 单个 PID 页 ============
 class PidPage(QWidget):
     def __init__(self, name):
         super().__init__()
@@ -323,10 +313,9 @@ class PidPage(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        title = QLabel(f"PID: {name}    （目标 goal vs 实际 actual）")
+        title = QLabel(f"PID: {name}    （goal 目标 vs actual 实际）")
         title.setStyleSheet(
-            "font-size:18px; font-weight:bold; color:#00e5ff; padding:4px;"
-        )
+            "font-size:18px; font-weight:bold; color:#00e5ff; padding:4px;")
         layout.addWidget(title)
 
         self.plot = pg.PlotWidget()
@@ -337,19 +326,16 @@ class PidPage(QWidget):
         self.plot.addLegend(offset=(10, 10))
         self.plot.setMouseEnabled(x=False, y=False)
         self.plot.setMenuEnabled(False)
-
-        # PyQtGraph 内置降采样 + 裁剪
         self.plot.setDownsampling(auto=True, mode='peak')
         self.plot.setClipToView(True)
 
         self.curves = {}
         for field, col in PLOT_FIELDS:
             self.curves[field] = self.plot.plot(
-                pen=pg.mkPen(col, width=3), name=field
-            )
+                pen=pg.mkPen(col, width=3), name=field)
         layout.addWidget(self.plot, 3)
 
-        # 数值表（7 项）
+        # 数值表
         grid = QGridLayout()
         grid.setSpacing(8)
         self.value_labels = {}
@@ -360,8 +346,7 @@ class PidPage(QWidget):
             lb_val.setStyleSheet(
                 "color:#fff; background:#1a1a1a; border:1px solid #444; "
                 "border-radius:3px; padding:6px 12px; font-weight:bold; "
-                "font-size:17px;"
-            )
+                "font-size:17px;")
             lb_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             row = i // 2
             cidx = (i % 2) * 2
@@ -382,17 +367,13 @@ class PidPage(QWidget):
         if len(self.time_buf) < 2:
             return
         t_all = list(self.time_buf)
-
-        # 只取最后 DRAW_POINTS 个点
         n = min(len(t_all), DRAW_POINTS)
         t_ds = t_all[-n:]
-
         for f, c in self.curves.items():
             y_all = list(self.bufs[f])
             y_ds = y_all[-n:]
             if len(y_ds) == len(t_ds):
                 c.setData(t_ds, y_ds)
-
         self.plot.setXRange(t_ds[-1] - 10, t_ds[-1] + 0.3, padding=0)
 
     def clear(self):
@@ -403,14 +384,13 @@ class PidPage(QWidget):
             lb.setText("--")
 
 
-# ==================== robot_data 数值条 ====================
+# ============ robot_data 数值条 ============
 class RobotBar(QWidget):
     def __init__(self):
         super().__init__()
         layout = QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
-
         self.labels = {}
         for i, (field, col) in enumerate(ROBOT_FIELDS):
             lb_name = QLabel(field)
@@ -419,8 +399,7 @@ class RobotBar(QWidget):
             lb_val.setStyleSheet(
                 "color:#fff; background:#1a1a1a; border:1px solid #444; "
                 "border-radius:2px; padding:2px 6px; "
-                "font-weight:bold; font-size:12px;"
-            )
+                "font-weight:bold; font-size:12px;")
             lb_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             row = i // 6
             cidx = (i % 6) * 2
@@ -437,7 +416,7 @@ class RobotBar(QWidget):
             lb.setText("--")
 
 
-# ==================== 主窗口 ====================
+# ============ 主窗口 ============
 class VexDebugger(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -457,13 +436,12 @@ class VexDebugger(QMainWindow):
         self.worker.rd_received.connect(self.on_rd)
         self.worker.status_changed.connect(self.on_status)
 
-        # 只刷当前页的曲线
         self.timer = QTimer()
         self.timer.timeout.connect(self.refresh_cycle)
         self.timer.start(UI_REFRESH_MS)
 
     def init_ui(self):
-        self.setWindowTitle("VEX V5 演示上位机 v5.0")
+        self.setWindowTitle("VEX V5 调试上位机 debug.py")
         self.resize(1500, 950)
         self.setStyleSheet("""
             QMainWindow { background:#1a1a1a; }
@@ -471,10 +449,6 @@ class VexDebugger(QMainWindow):
                         margin-top:12px; font-weight:bold; }
             QGroupBox::title { left:12px; padding:0 6px; color:#00e5ff; }
             QLabel { color:#fff; }
-            QPushButton { background:#00b4d8; color:#fff; border:none;
-                          padding:8px 16px; border-radius:4px;
-                          font-weight:bold; font-size:14px; }
-            QPushButton:hover { background:#0096c7; }
         """)
 
         tb = self.addToolBar("控制")
@@ -503,7 +477,6 @@ class VexDebugger(QMainWindow):
         tb.addAction(self.act_conn)
         tb.addSeparator()
 
-        # 翻页按钮（大）
         self.act_prev = QAction("◀ 上一页", self)
         self.act_prev.triggered.connect(self.prev_page)
         tb.addAction(self.act_prev)
@@ -511,8 +484,7 @@ class VexDebugger(QMainWindow):
         self.page_label = QLabel(f"  1/{len(PID_NAMES)}  ")
         self.page_label.setStyleSheet(
             "color:#00e5ff; font-weight:bold; font-size:16px; "
-            "padding:0 12px; min-width:160px; text-align:center;"
-        )
+            "padding:0 12px; min-width:160px; text-align:center;")
         self.page_label.setAlignment(Qt.AlignCenter)
         tb.addWidget(self.page_label)
 
@@ -531,7 +503,7 @@ class VexDebugger(QMainWindow):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
-        # ===== 左：地图 =====
+        # ---- 左：地图 ----
         left = QWidget()
         left.setFixedWidth(500)
         lv = QVBoxLayout(left)
@@ -555,10 +527,9 @@ class VexDebugger(QMainWindow):
         pv.addRow("yaw:", self.lbl_yaw)
         lv.addWidget(pos_group)
         lv.addStretch()
-
         root.addWidget(left)
 
-        # ===== 中：robot_data + PID 翻页 =====
+        # ---- 中：robot_data + PID 页 ----
         mid = QWidget()
         mv2 = QVBoxLayout(mid)
         mv2.setContentsMargins(0, 0, 0, 0)
@@ -573,23 +544,19 @@ class VexDebugger(QMainWindow):
         for name in PID_NAMES:
             self.stack.addWidget(self.pid_pages[name])
         mv2.addWidget(self.stack, 1)
-
         root.addWidget(mid, 3)
 
-        # ===== 右：遥控器 =====
+        # ---- 右：遥控器 ----
         right = QWidget()
         right.setFixedWidth(340)
         rv2 = QVBoxLayout(right)
-
         rc_group = QGroupBox("遥控器数据 (ControllerData)")
         rv2.addWidget(rc_group)
         self.rc_grid = QGridLayout(rc_group)
         self.build_rc_table()
         rv2.addStretch()
-
         root.addWidget(right)
 
-        # 键盘翻页
         QShortcut(QKeySequence(Qt.Key_Left),  self, self.prev_page)
         QShortcut(QKeySequence(Qt.Key_Right), self, self.next_page)
 
@@ -597,14 +564,14 @@ class VexDebugger(QMainWindow):
 
     def build_rc_table(self):
         fields = [
-            ("Ch1",      "int"),  ("Ch2",      "int"),
-            ("Ch3",      "int"),  ("Ch4",      "int"),
-            ("BtnA",     "bool"), ("BtnB",     "bool"),
-            ("BtnX",     "bool"), ("BtnY",     "bool"),
-            ("BtnUp",    "bool"), ("BtnDown",  "bool"),
-            ("BtnLeft",  "bool"), ("BtnRight", "bool"),
-            ("L1",       "bool"), ("L2",       "bool"),
-            ("R1",       "bool"), ("R2",       "bool"),
+            ("Ch1", "int"),  ("Ch2", "int"),
+            ("Ch3", "int"),  ("Ch4", "int"),
+            ("BtnA", "bool"), ("BtnB", "bool"),
+            ("BtnX", "bool"), ("BtnY", "bool"),
+            ("BtnUp", "bool"), ("BtnDown", "bool"),
+            ("BtnLeft", "bool"), ("BtnRight", "bool"),
+            ("L1", "bool"), ("L2", "bool"),
+            ("R1", "bool"), ("R2", "bool"),
         ]
         for col, h in enumerate(["变量", "类型", "当前值"]):
             lb = QLabel(h)
@@ -619,14 +586,12 @@ class VexDebugger(QMainWindow):
             v.setStyleSheet(
                 "color:#4CAF50; font-weight:bold; font-size:14px; "
                 "background:#1a1a1a; border:1px solid #444; "
-                "border-radius:3px; padding:3px;"
-            )
+                "border-radius:3px; padding:3px;")
             self.rc_grid.addWidget(n, row, 0)
             self.rc_grid.addWidget(t, row, 1)
             self.rc_grid.addWidget(v, row, 2)
             self.rc_widgets[name] = v
 
-    # ---------------- 翻页 ----------------
     def prev_page(self):
         self.cur_page = (self.cur_page - 1) % len(PID_NAMES)
         self.update_page()
@@ -639,10 +604,9 @@ class VexDebugger(QMainWindow):
         self.stack.setCurrentIndex(self.cur_page)
         self.page_label.setText(
             f"  {self.cur_page + 1}/{len(PID_NAMES)}   "
-            f"[ {PID_NAMES[self.cur_page]} ]"
-        )
+            f"[ {PID_NAMES[self.cur_page]} ]")
+        self.pid_pages[PID_NAMES[self.cur_page]].refresh()
 
-    # ---------------- 数据槽 ----------------
     def on_pid(self, name, values):
         if name not in self.pid_pages:
             return
@@ -672,17 +636,14 @@ class VexDebugger(QMainWindow):
             lb.setStyleSheet(
                 f"color:{color}; font-weight:bold; font-size:14px; "
                 f"background:#1a1a1a; border:1px solid #444; "
-                f"border-radius:3px; padding:3px;"
-            )
+                f"border-radius:3px; padding:3px;")
 
     def on_status(self, s):
         self.status_label.setText(s)
 
     def refresh_cycle(self):
-        # 只刷当前页
         self.pid_pages[PID_NAMES[self.cur_page]].refresh()
 
-    # ---------------- 串口 ----------------
     def refresh_ports(self):
         self.port_combo.clear()
         try:
